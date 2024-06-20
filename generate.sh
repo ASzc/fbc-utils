@@ -177,7 +177,7 @@ echo "-> opm render" >&2
 for ocp_ver in "${ocp_versions[@]}"
 do
     opm alpha render-template composite -o yaml -f catalogs.yaml -c contributions.yaml
-    mv "rhbk-operator" "catalog/$ocp_ver/"
+    mv "$operator_name" "catalog/$ocp_ver/"
 done
 
 # Optionally, add a skipRange relationship between the first version in a
