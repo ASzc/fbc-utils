@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -euo pipefail
 
@@ -62,16 +62,6 @@ then
 fi
 ln -fs "$yq_filename" yq
 
-# tap-fitter doesn't have binary downloads at the moment, so assume golang is
-# available and use that to install.
-if ! [ -x "$tf_filename" ]
-then
-    echo "-> Downloading tap-fitter" >&2
-    GOBIN="$bin_dir" go install "github.com/release-engineering/tap-fitter/cmd/tap-fitter@$tf_version"
-    mv tap-fitter "$tf_filename"
-fi
-ln -fs "$tf_filename" tap-fitter
-
 #
 # Generate Config YAMLs
 #
@@ -119,65 +109,20 @@ EOF
     yq -e ea '.bundles | .[]' "$cfg" | xargs -n1 printf '    - image: %s@%s\n' "$bundle_reg_from"
 } > "$render_config"
 
-echo "-> Defining supported OCP versions" >&2
-{
-    # Preamble
-    cat <<EOF
-schema: olm.composite
-components:
-EOF
-    # One component entry per OCP version supported
-    for olm_version in "${ocp_versions[@]}"
-    do
-        cat <<EOF
-  - name: $olm_version
-    destination:
-      path: $operator_name
-    strategy:
-      name: semver
-      template:
-        schema: olm.builder.semver
-        config:
-          input: $render_config
-          output: catalog.yaml
-EOF
-    done
-} > contributions.yaml
-
-{
-    # Preamble
-    cat <<EOF
-schema: olm.composite.catalogs
-catalogs:
-EOF
-    # One catalog per OCP version supported
-    for olm_version in "${ocp_versions[@]}"
-    do
-        cat <<EOF
-- name: $olm_version
-  destination:
-    workingDir: catalog/$olm_version
-  builders:
-    - olm.builder.semver
-EOF
-    done
-} > catalogs.yaml
-
 #
 # Generate Catalog
 #
 
 echo "=> Generating catalog for $operator_name" >&2
 
-echo "-> tap-fitter" >&2
-tap-fitter --catalog-path catalogs.yaml --composite-path contributions.yaml --provider "$operator_name"
-
 echo "-> opm render" >&2
 # TODO: Hacked for opm 1.27.1, restore when IIB fixed
 for ocp_ver in "${ocp_versions[@]}"
 do
-    opm alpha render-template composite -o yaml -f catalogs.yaml -c contributions.yaml
-    mv "$operator_name" "catalog/$ocp_ver/"
+    mkdir -p "catalog/$ocp_ver/"
+    mkdir $operator_name
+    opm alpha render-template semver -o yaml semver-template.yaml > $operator_name/catalog.yaml
+    mv $operator_name "catalog/$ocp_ver/"
 done
 
 # Optionally, add a skipRange relationship between the first version in a
@@ -206,61 +151,29 @@ then
     done < <(find catalog/ -type f -name 'catalog.yaml')
 fi
 
-echo "-> Dockerfiles + devfiles" >&2
+echo "-> Dockerfiles" >&2
+{
 for ocp_ver in "${ocp_versions[@]}"
 do
-    # Soon this might be able to be simplified, as "binaryless" container, FROM scratch
-    {
-        cat <<EOF
-# The base image is expected to contain
-# /bin/opm (with a serve subcommand) and /bin/grpc_health_probe
-EOF
+    mkdir -p catalog/$ocp_ver
+    pushd catalog/$ocp_ver
+    ocp_image_ver_name=
+    # OCP version 4.15 changed the image name
+    if [[ "$(printf '%s\n' "v4.14" "$ocp_ver" | sort -V | tail -n1)" == "v4.14" ]]
+    then
+        # Use old form <= v4.14
+        ocp_image_name="ose-operator-registry"
+    else
+        # Use new form > v4.14
+        ocp_image_name="ose-operator-registry-rhel9"
+    fi
 
-        # OCP version 4.15 changed the image name
-        if [[ "$(printf '%s\n' "v4.14" "$ocp_ver" | sort -V | tail -n1)" == "v4.14" ]]
-        then
-            # Use old form <= v4.14
-            echo "FROM registry.redhat.io/openshift4/ose-operator-registry:$ocp_ver"
-        else
-            # Use new form > v4.14
-            echo "FROM registry.redhat.io/openshift4/ose-operator-registry-rhel9:$ocp_ver"
-        fi
+    opm generate dockerfile --binary-image registry.redhat.io/openshift4/$ocp_image_name:$ocp_ver $operator_name
+    mv $operator_name.Dockerfile Dockerfile
 
-        cat <<EOF
-
-# Configure the entrypoint and command
-ENTRYPOINT ["/bin/opm"]
-CMD ["serve", "/configs", "--cache-dir=/tmp/cache"]
-
-# Copy declarative config root into image at /configs and pre-populate serve cache
-ADD $operator_name /configs/$operator_name
-RUN ["/bin/opm", "serve", "/configs", "--cache-dir=/tmp/cache", "--cache-only"]
-
-# Set DC-specific label for the location of the DC root directory
-# in the image
-LABEL operators.operatorframework.io.index.configs.v1=/configs
-EOF
-    } > "catalog/$ocp_ver/Dockerfile"
-
-    devfile="catalog/$ocp_ver/devfile.yaml"
-    yq -i e '.metadata.name = "fbc-" + .metadata.name' "$devfile"
-    yq -i e '.metadata.displayName = "FBC " + .metadata.displayName' "$devfile"
-    yq -i e '.metadata.provider = "Red Hat"' "$devfile"
-    yq -i e 'with(.components | .[] | select(.name == "image-build") ;
-                .image.imageName = "" |
-                .image.dockerfile.uri = "Dockerfile" |
-                .image.dockerfile.buildContext = ""
-            )' "$devfile"
-    yq -i e '.components += {"name": "kubernetes"}' "$devfile"
-    yq -i e 'with(.components | .[] | select(.name == "kubernetes") ;
-                .kubernetes.inlined = "placeholder" |
-                .attributes."deployment/container-port" = 50051 |
-                .attributes."deployment/cpuRequest" = "100m" |
-                .attributes."deployment/memoryRequest" = "512Mi" |
-                .attributes."deployment/replicas" = 1 |
-                .attributes."deployment/storageRequest" = "0"
-            )' "$devfile"
+    popd
 done
+}
 
 echo "-> Replacing registries" >&2
 # This step is required because opm doesn't support registry mirrors, and must
