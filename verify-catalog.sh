@@ -66,9 +66,19 @@ do
     if mediatype="$(skopeo inspect --raw "docker://$image" | jq -r '.mediaType')"
     then
         # Image found, but ensure mediatype of bundles is ok
-        if grep -qF -e '-bundle@' <<<"$image" && [ "$mediatype" != "application/vnd.docker.distribution.manifest.v2+json" ]
+        if grep -qF -e '-bundle@' <<<"$image"
         then
-            echo "$image $mediatype" >> invalid-mediatype
+            case $mediatype in
+                application/vnd.docker.distribution.manifest.v2+json)
+                    echo "$image" >> found
+                    ;;
+                application/vnd.oci.image.manifest.v1+json)
+                    echo "$image" >> found
+                    ;;
+                *)
+                    echo "$image $mediatype" >> invalid-mediatype
+                    ;;
+            esac
         else
             echo "$image" >> found
         fi

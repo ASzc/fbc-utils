@@ -36,6 +36,8 @@ do
             ;;
         application/vnd.docker.distribution.manifest.v2+json)
             ;;
+        application/vnd.oci.image.manifest.v1+json)
+            ;;
         *)
             echo "ERROR: unknown media type '$media_type' for bundle '$bundle_digest'" >&2
             exit 1
