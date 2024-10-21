@@ -36,7 +36,7 @@ os="$(uname -s | tr '[:upper:]' '[:lower:]')"
 arch="$(uname -m | sed 's/x86_64/amd64/')"
 
 # These are the specific versions we want
-opm_version="v1.27.1"
+opm_version="v1.47.0"
 yq_version="v4.22.1"
 tf_version="v0.1.0"
 
@@ -116,14 +116,21 @@ EOF
 echo "=> Generating catalog for $operator_name" >&2
 
 echo "-> opm render" >&2
-mkdir "$operator_name"
-opm alpha render-template semver -o yaml semver-template.yaml > "$operator_name/catalog.yaml"
+opm alpha render-template semver -o yaml semver-template.yaml > "bo-catalog.yaml"
+echo "-> opm render --migrate" >&2
+opm alpha render-template semver --migrate-level=bundle-object-to-csv-metadata -o yaml semver-template.yaml > "cm-catalog.yaml"
 for ocp_ver in "${ocp_versions[@]}"
 do
-    mkdir -p "catalog/$ocp_ver/"
-    cp -r "$operator_name" "catalog/$ocp_ver/"
+    # For OCP versions equal or newer than 4.17, use csv-metadata formatted bundle info inside catalog
+    if printf '%s\n' "$ocp_ver" "v4.17" | sort -V | head -n1 | grep -q -xF 'v4.17'
+    then
+        catalog_format="cm-catalog.yaml"
+    else
+        catalog_format="bo-catalog.yaml"
+    fi
+    mkdir -p "catalog/$ocp_ver/$operator_name"
+    cp "$catalog_format" "catalog/$ocp_ver/$operator_name/catalog.yaml"
 done
-rm -rf "$operator_name"
 
 # Optionally, add a skipRange relationship between the first version in a
 # channel and all prior versions in the previous channel. This allows automatic
