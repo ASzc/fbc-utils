@@ -97,7 +97,7 @@ render_config="semver-template.yaml"
     cat <<EOF
 schema: olm.semver
 generatemajorchannels: true
-generateminorchannels: false
+generateminorchannels: true
 stable:
   bundles:
 EOF
@@ -141,20 +141,23 @@ then
     echo "-> Major version upgrade fix (skipRange)" >&2
     while read -r catalog
     do
-        previous_first_entry_name=""
+        root_entry_name=""
         while IFS=$'\t' read -r name first_entry_name
         do
-            if [ -n "$previous_first_entry_name" ]
+            if [ -z "$root_entry_name" ]
             then
-                # ex: rhbk-operator.v24.0.3-opr.1 -> 24.0.3-opr.1
-                low_ver="$(cut -d. -f2- <<<"$previous_first_entry_name" | sed 's/^v//')"
-                high_ver="$(cut -d. -f2- <<<"$first_entry_name" | sed 's/^v//')"
-                skip_range=">=$low_ver <$high_ver"
-
-                n="$name" r="$skip_range" yq -ei e 'select(.schema == "olm.channel" and .name == strenv(n)).entries[-1].skipRange = strenv(r)' "$catalog"
+                root_entry_name="$first_entry_name"
             fi
-            previous_first_entry_name="$first_entry_name"
+
+            # ex: rhbk-operator.v24.0.3-opr.1 -> 24.0.3-opr.1
+            low_ver="$(cut -d. -f2- <<<"$root_entry_name" | sed 's/^v//')"
+            high_ver="$(cut -d. -f2- <<<"$first_entry_name" | sed 's/^v//')"
+            skip_range=">=$low_ver <$high_ver"
+
+            n="$name" r="$skip_range" yq -ei e 'select(.schema == "olm.channel" and .name == strenv(n)).entries[-1].skipRange = strenv(r)' "$catalog"
+
         done < <(yq -o tsv -e e 'select(.schema == "olm.channel" and (.name | contains("stable-"))) | [.name, .entries[0].name]' "$catalog")
+
     done < <(find catalog/ -type f -name 'catalog.yaml')
 fi
 
