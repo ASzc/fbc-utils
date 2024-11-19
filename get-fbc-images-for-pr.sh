@@ -92,7 +92,7 @@ do
         break
     else
         echo "=> Waiting for checks to complete..." >&2
-        sleep 60s
+        sleep 120s
     fi
 done
 if [ -n "$error" ]
