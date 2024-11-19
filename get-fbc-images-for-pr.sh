@@ -21,72 +21,82 @@ commit="$(call_gh "repos/$repo/pulls/$pr/commits" | jq -r '.[0] | .sha')"
 echo "=> Head commit ${commit:0:10}" >&2
 
 echo "=> Finding image coordinates" >&2
-while read -r image_coord
+error=""
+completed_check_ids=()
+while true
 do
-    # Verify it exists
-    if skopeo inspect --no-tags "docker://$image_coord" >/dev/null
-    then
-        echo "$image_coord"
-    else
-        echo "WARN: found image coord does not exist: $image_coord" >&2
-    fi
-done < <(
-    completed_check_ids=()
-    while true
+    waiting=""
+    while IFS=$'\t' read -r id status conclusion html_url details_url
     do
-        waiting=""
-        while IFS=$'\t' read -r id status conclusion html_url details_url
+        # Don't repeatedly show checks that we've already shown as pass/fail
+        skip=""
+        for completed_id in "${completed_check_ids[@]}"
         do
-            # Don't repeatedly show checks that we've already shown as pass/fail
-            skip=""
-            for completed_id in "${completed_check_ids[@]}"
-            do
-                if [[ "$completed_id" == "$id" ]]
-                then
-                    skip="yes"
-                fi
-            done
-            if [ -n "$skip" ]
+            if [[ "$completed_id" == "$id" ]]
             then
-                continue
+                skip="yes"
             fi
+        done
+        if [ -n "$skip" ]
+        then
+            continue
+        fi
 
-            if [[ "$status" == "completed" ]] && [[ "$conclusion" == "success" ]]
+        if [[ "$status" == "completed" ]] && [[ "$conclusion" == "success" ]]
+        then
+            echo " -> $id has $status ok" >&2
+            completed_check_ids+=("$id")
+            # ex: https://console.redhat.com/preview/application-pipeline/ns/rhbk-release-tenant/pipelinerun/rhbk-fbc-component-v4-12-on-pull-request-4rpfs
+            IFS=$'\t' read -r konflux_namespace konflux_component < <(sed -r 's|^.*/application-pipeline/ns/([^/]+)/pipelinerun/([^/]+)-on-pull-request[^/]*$|\1\t\2|;tx;d;:x' <<<"$details_url")
+
+            # New format with just namespace and component name
+            image_coord="quay.io/redhat-user-workloads/$konflux_namespace/$konflux_component:on-pr-$commit"
+            if ! skopeo inspect --no-tags "docker://$image_coord" >/dev/null 2>&1
             then
-                echo " -> $id has $status ok" >&2
-                completed_check_ids+=("$id")
-                # ex: https://console.redhat.com/preview/application-pipeline/ns/rhbk-release-tenant/pipelinerun/rhbk-fbc-component-v4-12-on-pull-request-4rpfs
-                IFS=$'\t' read -r konflux_namespace konflux_component < <(sed -r 's|^.*/application-pipeline/ns/([^/]+)/pipelinerun/([^/]+)-on-pull-request[^/]*$|\1\t\2|;tx;d;:x' <<<"$details_url")
-
+                echo " -> Image not found, trying fallback image location" >&2
                 konflux_application="$(sed 's/-component//' <<<"$konflux_component")"
 
                 # ex: quay.io/redhat-user-workloads/rhbk-release-tenant/rhbk-fbc-v4-13/rhbk-fbc-component-v4-13:on-pr-51476f518900c699e66c4d0fdd33dbb9524e83de
                 image_coord="quay.io/redhat-user-workloads/$konflux_namespace/$konflux_application/$konflux_component:on-pr-$commit"
 
-                echo "$image_coord"
-            elif [[ "$status" != "completed" ]]
-            then
-                echo " -> $id is $status" >&2
-                waiting="yes"
+                if ! skopeo inspect --no-tags "docker://$image_coord" >/dev/null
+                then
+                    echo "ERROR: No image found for $id, see $html_url" >&2
+                    error="yes"
+                else
+                    echo "$image_coord"
+                fi
             else
-                echo "ERROR: $id is $status ($conclusion), see $html_url" >&2
-                completed_check_ids+=("$id")
+                echo "$image_coord"
             fi
-        done < <(
-            call_gh "repos/$repo/commits/$commit/check-runs" \
-                | jq -r '.check_runs
-                    | .[]
-                    | select(.external_id | contains("-on-pull-request-"))
-                    | [.external_id, .status, .conclusion, .html_url, .details_url]
-                    | @tsv' \
-                | sort -V
-        )
-        if [ -z "$waiting" ]
+        elif [[ "$status" != "completed" ]]
         then
-            break
+            echo " -> $id is $status" >&2
+            waiting="yes"
         else
-            echo "=> Waiting for checks to complete..." >&2
-            sleep 60s
+            echo "ERROR: $id is $status ($conclusion), see $html_url" >&2
+            error="yes"
+            completed_check_ids+=("$id")
         fi
-    done
-)
+    done < <(
+        call_gh "repos/$repo/commits/$commit/check-runs" \
+            | jq -r '.check_runs
+                | .[]
+                | select(.external_id | contains("-on-pull-request-"))
+                | [.external_id, .status, .conclusion, .html_url, .details_url]
+                | @tsv' \
+            | sort -V
+    )
+    if [ -z "$waiting" ]
+    then
+        break
+    else
+        echo "=> Waiting for checks to complete..." >&2
+        sleep 60s
+    fi
+done
+if [ -n "$error" ]
+then
+    echo "ERROR: One or more index images could not be found" >&2
+    exit 1
+fi
