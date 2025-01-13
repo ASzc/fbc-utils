@@ -11,10 +11,11 @@ cd "$tmp_dir"
 
 echo "=> Generating YAMLs" >&2
 
-while read -r snapshot
+while IFS=$'\t' read -r snapshot imagecoord
 do
     root="${snapshot%-*}"
     echo " -> $root" >&2
+    echo "$imagecoord"
 
     release_name="$snapshot-manual-release"
     release_plan="$root-prod-release-plan"
@@ -31,7 +32,7 @@ spec:
 EOF
 done < <(
     oc get -o json snapshot --kubeconfig="$HOME/.kube/konflux-kubeconfig-rhbk.yaml" | \
-        jq -r --arg commit "$commit" '.items | .[] | select(.metadata.annotations."build.appstudio.redhat.com/commit_sha" == $commit) | .metadata.name'
+        jq -r --arg commit "$commit" '.items | .[] | select(.metadata.annotations."build.appstudio.redhat.com/commit_sha" == $commit) | [.metadata.name, .spec.components[0].containerImage] | @tsv'
 )
 
-echo "=> Done, review and if ok, then run: oc apply --kubeconfig=$HOME/.kube/konflux-kubeconfig-yourproduct.yaml -f $tmp_dir"
+echo "=> Done, review and if ok, then run: oc apply --kubeconfig=$HOME/.kube/konflux-kubeconfig-yourproduct.yaml -f $tmp_dir" >&2
