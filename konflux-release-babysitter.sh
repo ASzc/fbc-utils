@@ -80,6 +80,7 @@ do
         then
             # Retry failed releases
             echo "-> $root failed, retrying" >&2
+            pending_releases="yes"
         elif [[ "$release_status" == "Succeeded" ]]
         then
             # Successful
@@ -87,6 +88,7 @@ do
         else
             # First release for this snapshot
             echo "-> $root"
+            pending_releases="yes"
         fi
 
         release_name="$snapshot-release-$timestamp"
