@@ -43,7 +43,7 @@ fi
 
 echo "" >&2
 cat available_ocp_versions >&2
-echo "" > &2
+echo "" >&2
 read -rn1 -p "Are the above active OCP versions ok to release to? [y/N]: "
 echo "" >&2
 if ! [[ $REPLY =~ ^[Yy]$ ]]
