@@ -69,22 +69,23 @@ do
 
         release_plan="$root-prod-release-plan"
 
-        IFS=$'\t' read -r existing_release_name release_status release_message < <(grep -F "$snapshot" releases | tail -n1 || true)
-
-        if [[ "$release_status" == "Progressing" ]]
+        if IFS=$'\t' read -r existing_release_name release_status release_message < <(grep -F "$snapshot" releases | tail -n1 || true)
         then
-            # Do nothing for any snapshot with an ongoing release
-            pending_releases="yes"
-            continue
-        elif [[ "$release_status" == "Failed" ]]
-        then
-            # Retry failed releases
-            echo "-> $root failed, retrying" >&2
-            pending_releases="yes"
-        elif [[ "$release_status" == "Succeeded" ]]
-        then
-            # Successful
-            continue
+            if [[ "$release_status" == "Progressing" ]]
+            then
+                # Do nothing for any snapshot with an ongoing release
+                pending_releases="yes"
+                continue
+            elif [[ "$release_status" == "Failed" ]]
+            then
+                # Retry failed releases
+                echo "-> $root failed, retrying" >&2
+                pending_releases="yes"
+            elif [[ "$release_status" == "Succeeded" ]]
+            then
+                # Successful
+                continue
+            fi
         else
             # First release for this snapshot
             echo "-> $root"
