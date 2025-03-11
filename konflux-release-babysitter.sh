@@ -52,6 +52,7 @@ then
     exit 2
 fi
 
+firstloop="yes"
 # Retry until all builds are released
 while true
 do
@@ -74,6 +75,10 @@ do
             if [[ "$release_status" == "Progressing" ]]
             then
                 # Do nothing for any snapshot with an ongoing release
+                if [ -n "$firstloop" ]
+                then
+                    echo "-> $root in progress" >&2
+                fi
                 pending_releases="yes"
                 continue
             elif [[ "$release_status" == "Failed" ]]
@@ -84,6 +89,10 @@ do
             elif [[ "$release_status" == "Succeeded" ]]
             then
                 # Successful
+                if [ -n "$firstloop" ]
+                then
+                    echo "-> $root released ok" >&2
+                fi
                 continue
             fi
         else
@@ -123,4 +132,6 @@ EOF
         # Wait for Konflux to process pending releases
         sleep 5m
     fi
+
+    firstloop=""
 done
