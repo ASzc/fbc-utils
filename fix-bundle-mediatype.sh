@@ -34,6 +34,10 @@ do
             echo "Converting manifest list to manifest for bundle $bundle_digest" >&2
             B="$bundle_digest" D="$zeroth_digest" yq -i e '(.bundles[] | select(. == strenv(B))) = strenv(D)' "$cfg"
             ;;
+        application/vnd.oci.image.index.v1+json)
+            echo "Converting image index to manifest for bundle $bundle_digest" >&2
+            B="$bundle_digest" D="$zeroth_digest" yq -i e '(.bundles[] | select(. == strenv(B))) = strenv(D)' "$cfg"
+            ;;
         application/vnd.docker.distribution.manifest.v2+json)
             ;;
         application/vnd.oci.image.manifest.v1+json)
