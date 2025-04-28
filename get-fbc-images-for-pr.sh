@@ -47,7 +47,7 @@ do
             echo " -> $id has $status ok" >&2
             completed_check_ids+=("$id")
             # ex: https://console.redhat.com/preview/application-pipeline/ns/rhbk-release-tenant/pipelinerun/rhbk-fbc-component-v4-12-on-pull-request-4rpfs
-            IFS=$'\t' read -r konflux_namespace konflux_component < <(sed -r 's|^.*/application-pipeline/ns/([^/]+)/pipelinerun/([^/]+)-on-pull-request[^/]*$|\1\t\2|;tx;d;:x' <<<"$details_url")
+            IFS=$'\t' read -r konflux_namespace konflux_component < <(sed -r 's|^.*/ns/([^/]+)/pipelinerun/([^/]+)-on-pull-request[^/]*$|\1\t\2|;tx;d;:x' <<<"$details_url")
 
             # New format with just namespace and component name
             image_coord="quay.io/redhat-user-workloads/$konflux_namespace/$konflux_component:on-pr-$commit"
