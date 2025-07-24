@@ -103,6 +103,7 @@ kubectl delete -n olm catalogsource --all
 kubectl apply -f catalog.yaml
 
 echo "  -> Wait for PackageManifest" >&2
+sleep 30s
 while true
 do
     kubectl get packagemanifest -o name > package_fqn
