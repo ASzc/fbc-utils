@@ -2,19 +2,20 @@
 
 set -euo pipefail
 
-if ! cfg="$(readlink -e config.yaml)"
-then
-    echo "Could not find config file" >&2
-    exit 1
-fi
+commit_override="${1:-}"
 
 product="rhbk"
 kubeconfig="$HOME/.kube/konflux-kubeconfig-$product.yaml"
 
-git checkout main >&2
-git pull --rebase >&2
-commit="$(git rev-parse HEAD)"
-git show HEAD >&2
+if [ -n "$commit_override" ]
+then
+    commit="$commit_override"
+else
+    git checkout main >&2
+    git pull --rebase >&2
+    commit="$(git rev-parse HEAD)"
+fi
+git show "$commit" >&2
 read -rn1 -p "Is the above commit ok to release? [y/N]: "
 echo "" >&2
 if ! [[ $REPLY =~ ^[Yy]$ ]]
@@ -23,26 +24,17 @@ then
     exit 2
 fi
 
+origin_dir="$(readlink -e .)"
 tmp_dir="/tmp/krb"
 rm -rf "$tmp_dir"
 mkdir "$tmp_dir"
 cd "$tmp_dir"
 
 # Ensure that there's a successful build of each version of the FBC for the head commit
-yq -e e '.ocp | .[]' "$cfg" | sort -V > active_ocp_versions
-
-oc get -o json snapshot --kubeconfig="$kubeconfig" | jq -r --arg commit "$commit" '.items | .[] | select(.metadata.annotations."build.appstudio.redhat.com/commit_sha" == $commit) | [.metadata.name, .spec.components[0].containerImage] | @tsv' | sort -V > snapshots
-
-sed -r 's/.*(v[0-9]+)-([0-9]+).*/\1.\2/' snapshots > available_ocp_versions
-
-if ! diff -u active_ocp_versions available_ocp_versions
-then
-    echo "Error: A snapshot is not available for all active OCP versions" >&2
-    exit 1
-fi
+git -C "$origin_dir" show "$commit:config.yaml" | yq -e e '.ocp | .[]' | sort -V > active_ocp_versions
 
 echo "" >&2
-cat available_ocp_versions >&2
+cat active_ocp_versions >&2
 echo "" >&2
 read -rn1 -p "Are the above active OCP versions ok to release to? [y/N]: "
 echo "" >&2
@@ -52,6 +44,37 @@ then
     exit 2
 fi
 
+# Retry until all snapshots are available
+echo "Checking for available snapshots"
+echo ""
+firstloop="yes"
+touch prev_available_ocp_versions
+while true
+do
+    oc get -o json snapshot --kubeconfig="$kubeconfig" | jq -r --arg commit "$commit" '.items | .[] | select(.metadata.annotations."build.appstudio.redhat.com/commit_sha" == $commit) | [.metadata.name, .spec.components[0].containerImage] | @tsv' | sort -V > snapshots
+
+    sed -r 's/.*(v[0-9]+)-([0-9]+).*/\1.\2/' snapshots > available_ocp_versions
+
+    if [ -n "$firstloop" ]
+    then
+        sed -r 's/^/-> /' available_ocp_versions
+        firstloop=""
+    else
+        grep -Fxvf available_ocp_versions prev_available_ocp_versions | sed -r 's/^/-> /' || true
+    fi
+    cp available_ocp_versions prev_available_ocp_versions
+
+    if ! diff active_ocp_versions available_ocp_versions >/dev/null
+    then
+        sleep 5m
+    else
+        break
+    fi
+done
+
+echo ""
+echo "Releasing snapshots"
+echo ""
 firstloop="yes"
 # Retry until all builds are released
 while true
