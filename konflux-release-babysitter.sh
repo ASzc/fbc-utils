@@ -4,8 +4,7 @@ set -euo pipefail
 
 commit_override="${1:-}"
 
-product="rhbk"
-kubeconfig="$HOME/.kube/konflux-kubeconfig-$product.yaml"
+namespace="rhbk-release-tenant"
 
 if [ -n "$commit_override" ]
 then
@@ -51,7 +50,7 @@ firstloop="yes"
 touch prev_available_ocp_versions
 while true
 do
-    oc get -o json snapshot --kubeconfig="$kubeconfig" | jq -r --arg commit "$commit" '.items | .[] | select(.metadata.annotations."build.appstudio.redhat.com/commit_sha" == $commit) | [.metadata.name, .spec.components[0].containerImage] | @tsv' | sort -V > snapshots
+    oc get -o json snapshot -n "$namespace" | jq -r --arg commit "$commit" '.items | .[] | select(.metadata.annotations."build.appstudio.redhat.com/commit_sha" == $commit) | [.metadata.name, .spec.components[0].containerImage] | @tsv' | sort -V > snapshots
 
     sed -r 's/.*(v[0-9]+)-([0-9]+).*/\1.\2/' snapshots > available_ocp_versions
 
@@ -84,7 +83,7 @@ do
     timestamp="$(date +%s)"
 
     # Fetch existing releases
-    oc get -o json releases --kubeconfig="$kubeconfig" | jq -r '.items | .[] | select(.spec.releasePlan | contains("prod-release-plan")) | [.metadata.name, (.status.conditions | .[] | select(.type == "Released") | .reason, .message)] | @tsv' > releases
+    oc get -o json releases -n "$namespace" | jq -r '.items | .[] | select(.spec.releasePlan | contains("prod-release-plan")) | [.metadata.name, (.status.conditions | .[] | select(.type == "Released") | .reason, .message)] | @tsv' > releases
 
     # Handle each snapshot as required
     while IFS=$'\t' read -r snapshot imagecoord
@@ -132,13 +131,13 @@ apiVersion: appstudio.redhat.com/v1alpha1
 kind: Release
 metadata:
   name: $release_name
-  namespace: rhbk-release-tenant
+  namespace: $namespace
 spec:
   releasePlan: $release_plan
   snapshot: $snapshot
 EOF
 
-        oc apply --kubeconfig="$kubeconfig" -f "$release_name.yaml"
+        oc apply -n "$namespace" -f "$release_name.yaml"
         pending_releases="yes"
     done < snapshots
 
