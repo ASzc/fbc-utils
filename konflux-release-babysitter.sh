@@ -32,16 +32,24 @@ cd "$tmp_dir"
 # Ensure that there's a successful build of each version of the FBC for the head commit
 git -C "$origin_dir" show "$commit:config.yaml" | yq -e e '.ocp | .[]' | sort -V > active_ocp_versions
 
-echo "" >&2
-cat active_ocp_versions >&2
-echo "" >&2
-read -rn1 -p "Are the above active OCP versions ok to release to? [y/N]: "
-echo "" >&2
-if ! [[ $REPLY =~ ^[Yy]$ ]]
-then
-    echo "Error: User rejected the OCP versions, aborting" >&2
-    exit 2
-fi
+while true
+do
+    echo "" >&2
+    cat active_ocp_versions >&2
+    echo "" >&2
+    read -rn1 -p "Are the above active OCP versions ok to release to? [y/e/N]: "
+    echo "" >&2
+    if [[ $REPLY =~ ^[Ee]$ ]]
+    then
+        $EDITOR active_ocp_versions
+    elif ! [[ $REPLY =~ ^[Yy]$ ]]
+    then
+        echo "Error: User rejected the OCP versions, aborting" >&2
+        exit 2
+    else
+        break
+    fi
+done
 
 # Retry until all snapshots are available
 echo "Checking for available snapshots"
