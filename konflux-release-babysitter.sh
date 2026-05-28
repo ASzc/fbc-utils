@@ -67,7 +67,7 @@ do
         sed -r 's/^/-> /' available_ocp_versions
         firstloop=""
     else
-        grep -Fxvf available_ocp_versions prev_available_ocp_versions | sed -r 's/^/-> /' || true
+        grep -Fxvf prev_available_ocp_versions available_ocp_versions | sed -r 's/^/-> /' || true
     fi
     cp available_ocp_versions prev_available_ocp_versions
 
@@ -96,7 +96,9 @@ do
     # Handle each snapshot as required
     while IFS=$'\t' read -r snapshot imagecoord
     do
-        root="${snapshot%-*}"
+        # ex: rhbk-fbc-v4-12-20260217-151010-000 ->
+        #     rhbk-fbc-v4-12
+        root="$(sed -r 's/^(.*v[0-9]+-[0-9]+)-.*$/\1/' <<<"$snapshot")"
 
         release_plan="$root-prod-release-plan"
 
