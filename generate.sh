@@ -161,6 +161,20 @@ then
     done < <(find catalog/ -type f -name 'catalog.yaml')
 fi
 
+if yq -e e '.icon' "$cfg" 2>/dev/null >/dev/null
+then
+    echo "-> Apply icon data" >&2
+
+    ICON_B64="$(yq -e e '.icon.base64data' "$cfg")"
+    ICON_MT="$(yq -e e '.icon.mediatype' "$cfg")"
+    export ICON_B64 ICON_MT
+
+    while read -r catalog
+    do
+        yq -ei e 'select(.schema == "olm.package").icon = {"base64data": strenv(ICON_B64), "mediatype": strenv(ICON_MT)}' "$catalog"
+    done < <(find catalog/ -type f -name 'catalog.yaml')
+fi
+
 echo "-> Dockerfiles" >&2
 for ocp_ver in "${ocp_versions[@]}"
 do
