@@ -191,10 +191,17 @@ do
         ocp_image_name="ose-operator-registry-rhel9"
     fi
 
+    if grep -q '^v5\.' <<<"$ocp_ver"
+    then
+        repo_name="openshift5"
+    else
+        repo_name="openshift4"
+    fi
+
     cat > Dockerfile <<EOF
 # The base image is expected to contain
 # /bin/opm (with a serve subcommand) and /bin/grpc_health_probe
-FROM registry.redhat.io/openshift4/$ocp_image_name:$ocp_ver
+FROM registry.redhat.io/$repo_name/$ocp_image_name:$ocp_ver
 
 # Configure the entrypoint and command
 ENTRYPOINT ["/bin/opm"]
